@@ -11,7 +11,7 @@ int main(int, char **argv) {
     ifstream fin(argv[1], ios_base::in | ios_base::binary);
     ofstream fout(argv[2], ios_base::out);
 
-    int value = 0;
+    uint64_t value = 0;
     while (fin) {
         fin.read((char *) &value, sizeof(value));
         if (fin.gcount() == 0) {

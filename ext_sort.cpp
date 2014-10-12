@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <math.h>
+#include <cstdio>
 
 // Structure to hold command line arguments
 struct CliArguments {
@@ -64,7 +65,7 @@ int main(int argc, char **argv) {
 
 struct MergeElement {
     std::vector<std::ifstream>::iterator file_iterator_;
-    int value_;
+    uint64_t value_;
 
 public:
     MergeElement(std::vector<std::ifstream>::iterator file_iterator) :
@@ -85,7 +86,7 @@ public:
         file_iterator_->read((char *) &value_, sizeof(value_));
     }
 
-    int GetValue() const {
+    uint64_t GetValue() const {
         return value_;
     }
 
@@ -103,7 +104,6 @@ void MergeFiles(const std::vector<std::string> &input_file_names, std::string ou
     }
     std::ofstream out_file(output_file_name, std::ios_base::out | std::ios_base::binary);
 
-    // std::vector<int> merge;
     for (auto file_iter = in_files.begin(); file_iter != in_files.end(); ++file_iter) {
         merge_elements.Insert(MergeElement(file_iter));
     }
@@ -112,7 +112,7 @@ void MergeFiles(const std::vector<std::string> &input_file_names, std::string ou
         MergeElement minimum = merge_elements.GetTop();
         merge_elements.Pop();
 
-        int value = minimum.GetValue();
+        uint64_t value = minimum.GetValue();
         out_file.write((char *) &value, sizeof(value));
 
         minimum.ReadNextValue();
@@ -120,6 +120,8 @@ void MergeFiles(const std::vector<std::string> &input_file_names, std::string ou
             merge_elements.Insert(minimum);
         }
     }
+
+    out_file.flush();
 }
 
 long long GetFileSize(std::string filename) {
@@ -134,7 +136,7 @@ std::vector<std::string> SplitFileIntoSortedFiles(std::string input_file_name, s
     int chunk_size = ceil(double(file_size) / branching_degree);
     std::vector<std::string> sorted_file_names;
     std::ifstream in_file(input_file_name, std::ios_base::in | std::ios_base::binary);
-    std::vector<int> buffer(block_size / sizeof(int), 0);
+    std::vector<uint64_t> buffer(block_size / sizeof(uint64_t), 0);
     int file_name_number = 0;
 
     if (chunk_size <= block_size) {
@@ -143,16 +145,17 @@ std::vector<std::string> SplitFileIntoSortedFiles(std::string input_file_name, s
         while (in_file) {
             in_file.read((char *) &buffer[0], block_size);
             size_t bytes_read = in_file.gcount();
-            if (bytes_read < sizeof(int)) {
+            if (bytes_read < sizeof(uint64_t)) {
                 break;
             }
-            std::sort(buffer.begin(), buffer.begin() + (bytes_read / sizeof(int)));
+            std::sort(buffer.begin(), buffer.begin() + (bytes_read / sizeof(uint64_t)));
 
             std::string temp_file_name = temp_file_name_mask + std::to_string(file_name_number++);
             sorted_file_names.push_back(temp_file_name);
 
             std::ofstream out_file(temp_file_name, std::ios_base::out | std::ios_base::binary);
             out_file.write((char *) &buffer[0], bytes_read);
+            out_file.flush();
         }
     } else {
         // need multiple passes
@@ -167,7 +170,7 @@ std::vector<std::string> SplitFileIntoSortedFiles(std::string input_file_name, s
             while (chunk_size - chunk_filled > block_size) {
                 in_file.read((char *) &buffer[0], block_size);
                 size_t bytes_read = in_file.gcount();
-                if (bytes_read < sizeof(int)) {
+                if (bytes_read < sizeof(uint64_t)) {
                     break;
                 }
 
@@ -178,11 +181,16 @@ std::vector<std::string> SplitFileIntoSortedFiles(std::string input_file_name, s
             if (chunk_filled > 0) {
                 temp_file_names.push_back(temp_file_name);
                 sorted_file_names.push_back(temp_file_name + "_s");
+                chunk_file.flush();
             }
         }
 
         for (size_t file_name_idx = 0; file_name_idx < temp_file_names.size(); ++file_name_idx) {
             ExternalMergeSort(temp_file_names[file_name_idx], sorted_file_names[file_name_idx], block_size, branching_degree);
+        }
+
+        for (std::string temp_file: temp_file_names) {
+            ::remove(temp_file.c_str());
         }
     }
     return sorted_file_names;
@@ -217,4 +225,9 @@ CliArguments ParseCliArguments(int argc, char **argv) {
 void ExternalMergeSort(std::string input_file, std::string output_file, long long block_size, int branching_degree) {
     std::vector<std::string> temp_file_names = SplitFileIntoSortedFiles(input_file, input_file + "_tmp", block_size, branching_degree);
     MergeFiles(temp_file_names, output_file);
+
+    // remove unnecessary files
+    for (std::string temp_file: temp_file_names) {
+        ::remove(temp_file.c_str());
+    }
 }
