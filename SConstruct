@@ -12,6 +12,7 @@ env = Environment(CXX = 'g++',
                  )
 
 env.Program(target = 'text2bin', source = ['text2bin.cpp'])
+env.Program(target = 'bin2text', source = ['bin2text.cpp'])
 
 env.Program(target = 'ext_sort', source = ['ext_sort.cpp'])
 
