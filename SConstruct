@@ -11,4 +11,7 @@ env = Environment(CXX = 'g++',
                   CPPPATH = 'tclap-1.2.1/include'
                  )
 
+env.Program(target = 'text2bin', source = ['text2bin.cpp'])
+
 env.Program(target = 'ext_sort', source = ['ext_sort.cpp'])
+
