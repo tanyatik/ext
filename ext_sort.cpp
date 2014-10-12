@@ -3,9 +3,39 @@
 #include <tclap/CmdLine.h>
 #include "binary_heap.hpp"
 
-
-void MergeFiles(const std::vector<std::string> &input_file_names, std::string output_file_name);
+// Structure to hold command line arguments
+struct CliArguments {
+    std::string input_file;
+    std::string output_file;
+    int block_size;
+    int branching_degree;
+};
+// Parses command line arguments from input
+// Returns structure with extracted arguments
+CliArguments ParseCliArguments(int argc, char **argv);
+// Sorts file with name input_file and writes result into file with name output_file
+// Assumes input file and output file are binary
+// Block size is maximum file size which can be loaded into RAM
+// Branching is maximum number of splits per file
 void ExternalMergeSort(std::string input_file, std::string output_file, int block_size, int branching);
+// Splits a file into a sequence of sorted files
+// Sorting is performed sequentially (not parallel),
+// because it's assumed that only block of size block_size fits into memory
+// Returns vector with filenames, that store sorted files
+std::vector<std::string> SplitFileIntoSortedFiles(std::string input_file, int block_size, int branching);
+// Merges files into one big file
+// Input is in input_file_names, output is in output_file_name
+void MergeFiles(const std::vector<std::string> &input_file_names, std::string output_file_name);
+
+// Helper structure to merge files
+// Stores a pointer to file and last value read from that file
+struct MergeElement;
+
+int main(int argc, char **argv) {
+    CliArguments arguments = ParseCliArguments(argc, argv);
+    ExternalMergeSort(arguments.input_file, arguments.output_file, arguments.block_size, arguments.branching_degree);
+    return 0;
+}
 
 
 struct MergeElement {
@@ -40,7 +70,6 @@ public:
     }
 };
 
-
 void MergeFiles(const std::vector<std::string> &input_file_names, std::string output_file_name) {
     algorithms::BinaryHeap<MergeElement, std::greater<MergeElement>> merge_elements;
 
@@ -71,14 +100,6 @@ void MergeFiles(const std::vector<std::string> &input_file_names, std::string ou
 }
 
 
-struct CliArguments {
-    std::string input_file;
-    std::string output_file;
-    int block_size;
-    int branching_degree;
-};
-
-
 CliArguments ParseCliArguments(int argc, char **argv) {
     try {
         TCLAP::CmdLine cmd("Sorting in external memory", ' ', "1.0");
@@ -104,17 +125,12 @@ CliArguments ParseCliArguments(int argc, char **argv) {
     } catch (TCLAP::ArgException &arg) {
         std::cout << "Invalid arguments: " << arg.error() << "for arg " << arg.argId() << std::endl;
     }
-}
 
-
-int main(int argc, char **argv) {
-    CliArguments arguments = ParseCliArguments(argc, argv);
-    ExternalMergeSort(arguments.input_file, arguments.output_file, arguments.block_size, arguments.branching_degree);
-    return 0;
+    return CliArguments();
 }
 
 
 void ExternalMergeSort(std::string input_file, std::string output_file, int block_size, int branching) {
-    // TODO not implemented
-    MergeFiles({ input_file + "_1", input_file + "_2", input_file + "_3" }, output_file);
+    std::vector<std::string> temp_file_names = SplitFileIntoSortedFiles(input_file, block_size, branching);
+    MergeFiles(temp_file_names, output_file);
 }
