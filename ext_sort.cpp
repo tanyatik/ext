@@ -2,13 +2,26 @@
 #include <vector>
 #include <tclap/CmdLine.h>
 #include "binary_heap.hpp"
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <math.h>
 
 // Structure to hold command line arguments
 struct CliArguments {
     std::string input_file;
     std::string output_file;
-    int block_size;
+    long long block_size;
     int branching_degree;
+
+    void CheckOrDie() const {
+        const long long GB32 = 34359738368LU;
+        if (block_size % 4 != 0 ||
+            block_size < 4 ||
+            block_size > GB32) {
+            throw std::runtime_error("Block size must be in range [4 B; 32 GB]");
+        }
+    }
 };
 // Parses command line arguments from input
 // Returns structure with extracted arguments
@@ -17,23 +30,34 @@ CliArguments ParseCliArguments(int argc, char **argv);
 // Assumes input file and output file are binary
 // Block size is maximum file size which can be loaded into RAM
 // Branching is maximum number of splits per file
-void ExternalMergeSort(std::string input_file, std::string output_file, int block_size, int branching);
+void ExternalMergeSort(std::string input_file, std::string output_file, long long block_size, int branching);
 // Splits a file into a sequence of sorted files
 // Sorting is performed sequentially (not parallel),
 // because it's assumed that only block of size block_size fits into memory
 // Returns vector with filenames, that store sorted files
-std::vector<std::string> SplitFileIntoSortedFiles(std::string input_file, int block_size, int branching);
+std::vector<std::string> SplitFileIntoSortedFiles(std::string input_file_name, std::string temp_file_name_mask, long long block_size, int branching);
 // Merges files into one big file
 // Input is in input_file_names, output is in output_file_name
 void MergeFiles(const std::vector<std::string> &input_file_names, std::string output_file_name);
+// Utility function that returns file size
+long long GetFileSize(std::string filename);
 
 // Helper structure to merge files
 // Stores a pointer to file and last value read from that file
 struct MergeElement;
 
 int main(int argc, char **argv) {
-    CliArguments arguments = ParseCliArguments(argc, argv);
-    ExternalMergeSort(arguments.input_file, arguments.output_file, arguments.block_size, arguments.branching_degree);
+    try {
+        CliArguments arguments = ParseCliArguments(argc, argv);
+        ExternalMergeSort(arguments.input_file, arguments.output_file, arguments.block_size, arguments.branching_degree);
+    } catch (TCLAP::ArgException &arg) {
+        std::cout << "Invalid arguments: " << arg.error() << "for arg " << arg.argId() << std::endl;
+        return 1;
+    } catch (std::runtime_error& err) {
+        std::cout << "Runtime error: " << err.what() << std::endl;
+        return 1;
+    }
+
     return 0;
 }
 
@@ -89,7 +113,6 @@ void MergeFiles(const std::vector<std::string> &input_file_names, std::string ou
         merge_elements.Pop();
 
         int value = minimum.GetValue();
-        std::cout << "v " << value << std::endl;
         out_file.write((char *) &value, sizeof(value));
 
         minimum.ReadNextValue();
@@ -99,38 +122,99 @@ void MergeFiles(const std::vector<std::string> &input_file_names, std::string ou
     }
 }
 
-
-CliArguments ParseCliArguments(int argc, char **argv) {
-    try {
-        TCLAP::CmdLine cmd("Sorting in external memory", ' ', "1.0");
-        TCLAP::ValueArg<int> block_size_arg("b", "block-size", "Size of one block to use (in Mb)", false, 128, "integer");
-        TCLAP::ValueArg<int> branching_degree_arg("d", "branching", "Branching degree", false, 4, "integer");
-        TCLAP::UnlabeledValueArg<std::string> input_file_arg( "input_file", "Input file name", true, "", "nameString");
-        TCLAP::UnlabeledValueArg<std::string> output_file_arg( "output_file", "Output file name", true, "", "nameString");
-        cmd.add(input_file_arg);
-        cmd.add(output_file_arg);
-        cmd.add(block_size_arg);
-        cmd.add(branching_degree_arg);
-
-        cmd.parse(argc, argv);
-
-        CliArguments arguments {
-            input_file_arg.getValue(),
-            output_file_arg.getValue(),
-            block_size_arg.getValue(),
-            branching_degree_arg.getValue()
-        };
-
-        return arguments;
-    } catch (TCLAP::ArgException &arg) {
-        std::cout << "Invalid arguments: " << arg.error() << "for arg " << arg.argId() << std::endl;
-    }
-
-    return CliArguments();
+long long GetFileSize(std::string filename) {
+    struct stat stat_buf;
+    int rc = stat(filename.c_str(), &stat_buf);
+    return rc == 0 ? stat_buf.st_size : -1;
 }
 
 
-void ExternalMergeSort(std::string input_file, std::string output_file, int block_size, int branching) {
-    std::vector<std::string> temp_file_names = SplitFileIntoSortedFiles(input_file, block_size, branching);
+std::vector<std::string> SplitFileIntoSortedFiles(std::string input_file_name, std::string temp_file_name_mask, long long block_size, int branching_degree) {
+    long long file_size = GetFileSize(input_file_name);
+    int chunk_size = ceil(double(file_size) / branching_degree);
+    std::vector<std::string> sorted_file_names;
+    std::ifstream in_file(input_file_name, std::ios_base::in | std::ios_base::binary);
+    std::vector<int> buffer(block_size / sizeof(int), 0);
+    int file_name_number = 0;
+
+    if (chunk_size <= block_size) {
+        // can do in one pass
+
+        while (in_file) {
+            in_file.read((char *) &buffer[0], block_size);
+            size_t bytes_read = in_file.gcount();
+            if (bytes_read < sizeof(int)) {
+                break;
+            }
+            std::sort(buffer.begin(), buffer.begin() + (bytes_read / sizeof(int)));
+
+            std::string temp_file_name = temp_file_name_mask + std::to_string(file_name_number++);
+            sorted_file_names.push_back(temp_file_name);
+
+            std::ofstream out_file(temp_file_name, std::ios_base::out | std::ios_base::binary);
+            out_file.write((char *) &buffer[0], bytes_read);
+        }
+    } else {
+        // need multiple passes
+
+        std::vector<std::string> temp_file_names;
+        // split input file into chunks
+        while (in_file) {
+            std::string temp_file_name = temp_file_name_mask + std::to_string(file_name_number++);
+            std::ofstream chunk_file(temp_file_name, std::ios_base::out | std::ios_base::binary);
+
+            int chunk_filled = 0;
+            while (chunk_size - chunk_filled > block_size) {
+                in_file.read((char *) &buffer[0], block_size);
+                size_t bytes_read = in_file.gcount();
+                if (bytes_read < sizeof(int)) {
+                    break;
+                }
+
+                chunk_file.write((char *) &buffer[0], bytes_read);
+                chunk_filled += bytes_read;
+            }
+
+            if (chunk_filled > 0) {
+                temp_file_names.push_back(temp_file_name);
+                sorted_file_names.push_back(temp_file_name + "_s");
+            }
+        }
+
+        for (size_t file_name_idx = 0; file_name_idx < temp_file_names.size(); ++file_name_idx) {
+            ExternalMergeSort(temp_file_names[file_name_idx], sorted_file_names[file_name_idx], block_size, branching_degree);
+        }
+    }
+    return sorted_file_names;
+}
+
+
+CliArguments ParseCliArguments(int argc, char **argv) {
+    TCLAP::CmdLine cmd("Sorting in external memory", ' ', "1.0");
+    TCLAP::ValueArg<int> block_size_arg("b", "block_size", "Size of one block to use (in bytes)", false, 128, "integer");
+    TCLAP::ValueArg<int> branching_degree_arg("d", "branching", "Branching degree", false, 4, "integer");
+    TCLAP::UnlabeledValueArg<std::string> input_file_arg( "input_file", "Input file name", true, "", "nameString");
+    TCLAP::UnlabeledValueArg<std::string> output_file_arg( "output_file", "Output file name", true, "", "nameString");
+    cmd.add(input_file_arg);
+    cmd.add(output_file_arg);
+    cmd.add(block_size_arg);
+    cmd.add(branching_degree_arg);
+
+    cmd.parse(argc, argv);
+
+    CliArguments arguments {
+        input_file_arg.getValue(),
+        output_file_arg.getValue(),
+        block_size_arg.getValue(),
+        branching_degree_arg.getValue()
+    };
+    arguments.CheckOrDie();
+
+    return arguments;
+}
+
+
+void ExternalMergeSort(std::string input_file, std::string output_file, long long block_size, int branching_degree) {
+    std::vector<std::string> temp_file_names = SplitFileIntoSortedFiles(input_file, input_file + "_tmp", block_size, branching_degree);
     MergeFiles(temp_file_names, output_file);
 }
