@@ -17,7 +17,6 @@ int main(int, char **argv) {
         if (!fin) {
             break;
         }
-        std::cout << value << std::endl;
         fout.write((const char *) &value, sizeof(value));
     }
     fin.close();
