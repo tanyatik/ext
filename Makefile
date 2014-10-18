@@ -1,5 +1,5 @@
 CPP=g++
-CPPFLAGS=-Wall -Wextra -pedantic -std=c++11 -Itclap-1.2.1/include
+CPPFLAGS=-Wall -Wextra -pedantic -std=c++0x -Itclap-1.2.1/include
 
 SOURCES=text2bin.cpp bin2text.cpp ext_sort.cpp
 

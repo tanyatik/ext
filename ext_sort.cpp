@@ -1,4 +1,5 @@
 #include <fstream>
+#include <stdexcept>
 #include <vector>
 #include <tclap/CmdLine.h>
 #include "binary_heap.hpp"
