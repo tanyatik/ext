@@ -95,12 +95,13 @@ public:
     }
 };
 
+
 void MergeFiles(const std::vector<std::string> &input_file_names, std::string output_file_name) {
     algorithms::BinaryHeap<MergeElement, std::greater<MergeElement>> merge_elements;
 
     std::vector<std::ifstream> in_files;
     for (std::string file_name: input_file_names) {
-        in_files.push_back(std::ifstream(file_name, std::ios_base::in | std::ios_base::binary));
+        in_files.emplace_back(file_name, std::ios_base::in | std::ios_base::binary);
     }
     std::ofstream out_file(output_file_name, std::ios_base::out | std::ios_base::binary);
 
@@ -124,6 +125,7 @@ void MergeFiles(const std::vector<std::string> &input_file_names, std::string ou
     out_file.flush();
 }
 
+
 long long GetFileSize(std::string filename) {
     struct stat stat_buf;
     int rc = stat(filename.c_str(), &stat_buf);
@@ -133,7 +135,9 @@ long long GetFileSize(std::string filename) {
 
 std::vector<std::string> SplitFileIntoSortedFiles(std::string input_file_name, std::string temp_file_name_mask, long long block_size, int branching_degree) {
     long long file_size = GetFileSize(input_file_name);
-    int chunk_size = ceil(double(file_size) / branching_degree);
+
+    int chunk_size = ceil(double(file_size) / branching_degree) - (int(ceil(double(file_size) / branching_degree)) % 4);
+
     std::vector<std::string> sorted_file_names;
     std::ifstream in_file(input_file_name, std::ios_base::in | std::ios_base::binary);
     std::vector<uint64_t> buffer(block_size / sizeof(uint64_t), 0);
@@ -159,7 +163,6 @@ std::vector<std::string> SplitFileIntoSortedFiles(std::string input_file_name, s
         }
     } else {
         // need multiple passes
-
         std::vector<std::string> temp_file_names;
         // split input file into chunks
         while (in_file) {
