@@ -1,5 +1,6 @@
 #include <fstream>
 #include <stdexcept>
+#include <tr1/memory>
 #include <vector>
 #include <tclap/CmdLine.h>
 #include "binary_heap.hpp"
@@ -64,12 +65,16 @@ int main(int argc, char **argv) {
 }
 
 
+// A pointer to std::ifstream object (needed to store them in a container)
+typedef std::tr1::shared_ptr<std::ifstream> FilePointer;
+
+
 struct MergeElement {
-    std::vector<std::ifstream>::iterator file_iterator_;
+    std::vector<FilePointer>::iterator file_iterator_;
     uint64_t value_;
 
 public:
-    MergeElement(std::vector<std::ifstream>::iterator file_iterator) :
+    MergeElement(std::vector<FilePointer>::iterator file_iterator) :
         file_iterator_(file_iterator)
     {
         ReadNextValue();
@@ -84,7 +89,7 @@ public:
     }
 
     void ReadNextValue() {
-        file_iterator_->read((char *) &value_, sizeof(value_));
+        (*file_iterator_)->read((char *) &value_, sizeof(value_));
     }
 
     uint64_t GetValue() const {
@@ -92,7 +97,7 @@ public:
     }
 
     bool Stop() const {
-        return !(*file_iterator_);
+        return !(**file_iterator_);
     }
 };
 
@@ -100,9 +105,9 @@ public:
 void MergeFiles(const std::vector<std::string> &input_file_names, std::string output_file_name) {
     algorithms::BinaryHeap<MergeElement, std::greater<MergeElement>> merge_elements;
 
-    std::vector<std::ifstream> in_files;
+    std::vector<FilePointer> in_files;
     for (std::string file_name: input_file_names) {
-        in_files.emplace_back(file_name, std::ios_base::in | std::ios_base::binary);
+        in_files.push_back(FilePointer(new std::ifstream(file_name, std::ios_base::in | std::ios_base::binary)));
     }
     std::ofstream out_file(output_file_name, std::ios_base::out | std::ios_base::binary);
 
