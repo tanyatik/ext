@@ -1,6 +1,9 @@
 #include <fstream>
 #include <stdexcept>
+
+#ifdef OLD_GCC
 #include <tr1/memory>
+#endif
 #include <vector>
 #include <tclap/CmdLine.h>
 #include "binary_heap.hpp"
@@ -9,6 +12,9 @@
 #include <unistd.h>
 #include <math.h>
 #include <cstdio>
+
+const int DEFAULT_BLOCK_SIZE = 1024 * 1024 * 1024; // 1 GB
+const int DEFAULT_BRANCHING_DEGREE = 8;
 
 // Structure to hold command line arguments
 struct CliArguments {
@@ -66,7 +72,11 @@ int main(int argc, char **argv) {
 
 
 // A pointer to std::ifstream object (needed to store them in a container)
+#ifdef OLD_GCC
 typedef std::tr1::shared_ptr<std::ifstream> FilePointer;
+#else
+typedef std::shared_ptr<std::ifstream> FilePointer;
+#endif
 
 
 struct MergeElement {
@@ -208,8 +218,8 @@ std::vector<std::string> SplitFileIntoSortedFiles(std::string input_file_name, s
 
 CliArguments ParseCliArguments(int argc, char **argv) {
     TCLAP::CmdLine cmd("Sorting in external memory", ' ', "1.0");
-    TCLAP::ValueArg<int> block_size_arg("b", "block_size", "Size of one block to use (in bytes)", false, 128, "integer");
-    TCLAP::ValueArg<int> branching_degree_arg("d", "branching", "Branching degree", false, 4, "integer");
+    TCLAP::ValueArg<int> block_size_arg("b", "block_size", "Size of one block to use (in bytes)", false, DEFAULT_BLOCK_SIZE, "integer");
+    TCLAP::ValueArg<int> branching_degree_arg("d", "branching", "Branching degree", false, DEFAULT_BRANCHING_DEGREE, "integer");
     TCLAP::UnlabeledValueArg<std::string> input_file_arg( "input_file", "Input file name", true, "", "nameString");
     TCLAP::UnlabeledValueArg<std::string> output_file_arg( "output_file", "Output file name", true, "", "nameString");
     cmd.add(input_file_arg);
