@@ -1,3 +1,5 @@
+#define OLD_GCC
+
 #include <fstream>
 #include <stdexcept>
 
