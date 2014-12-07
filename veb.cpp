@@ -1,33 +1,65 @@
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <tclap/CmdLine.h>
 #include <assert.h>
 #include <cmath>
+#include <queue>
 
 
-const int DEFAULT_MEMORY_SIZE = 1024 * 1024 * 1024; // 1 GB
+static bool IsPowerOf2(size_t x) {
+    return (x & (x - 1)) == 0;
+}
 
-typedef long long Data;
-
-struct CliArguments {
-    std::string input_file;
-    std::string output_file;
-    long long memory_size; // in bytes
-
-    void CheckOrDie() const {
-        const long long GB4 = 1024 * 1024 * 1024 * 4;
-        if (memory_size % 4 != 0 ||
-                memory_size < 4 ||
-                memory_size > GB4) {
-             throw std::runtime_error("Memory size must be in range [4 B; 4 GB]");
-        }
+static size_t GetCeilPowerOf2(size_t x) {
+    if (IsPowerOf2(x)) {
+        return x;
     }
-};
+    size_t shifts = 0;
+    while (x) {
+        x >>= 1;
+        ++shifts;
+    }
+    x = 1LU << (shifts);
+
+    return x;
+}
+
 
 struct SearchEvent {
     size_t values_number;
     long long time_sec;
 };
+
+
+template<typename T>
+std::vector<T> BfsFromInorder(const std::vector<T>& keys) {
+    std::vector<T> bfs;
+    std::queue<std::pair<size_t, size_t>> bfs_ranges;
+    bfs_ranges.push(std::make_pair(0, keys.size()));
+
+    while (!bfs_ranges.empty()) {
+        std::pair<size_t, size_t> range = bfs_ranges.front();
+        bfs_ranges.pop();
+
+        if (range.first == range.second) {
+            continue;
+        }
+
+        if (range.first + 1 == range.second) {
+            bfs.push_back(keys[range.first]);
+            continue;
+        }
+
+        size_t middle = (range.first + range.second) >> 1;
+
+        bfs.push_back(keys[middle]);
+        bfs_ranges.push(std::make_pair(range.first, middle));
+        bfs_ranges.push(std::make_pair(middle + 1, range.second));
+    }
+
+    return bfs;
+}
 
 
 template<typename T>
@@ -49,9 +81,6 @@ public:
 private:
     std::vector<TNode> layout_;
 
-    static bool IsPowerOf2(size_t x) {
-        return (x & (x - 1)) == 0;
-    }
 
 public:
     void DebugPrint() const {
@@ -62,83 +91,99 @@ public:
     }
 
     template<typename TInputIter>
-    std::vector<T> Create(TInputIter begin, TInputIter end,
+    std::vector<size_t> Create(TInputIter begin, TInputIter end,
             size_t out_begin) {
         size_t size = std::distance(begin, end);
-        assert(IsPowerOf2(size + 1));
+        size_t ceil_size = GetCeilPowerOf2(size) - 1;
 
         if (size == 1) {
             layout_[out_begin] = TNode(*begin, -1, -1);
-            return { (int) out_begin };
+            return { out_begin };
         }
 
-        size_t height = ceil(log2(size));
+        size_t height = ceil(log2(ceil_size));
         size_t top_height = height >> 1;
         size_t bottom_height = height - top_height;
         size_t top_size = (1 << top_height) - 1;
         size_t bottom_size = (1 << bottom_height) - 1;
 
-        size_t bottom_number = top_size + 1;
-
         // create top tree
-        auto current_end = std::next(begin, top_size);
-        std::vector<T> top_leaves_idxs = Create(begin, current_end, out_begin);
+        auto current_begin = begin;
+        size_t current_out_begin = out_begin;
 
-        begin = std::next(begin, top_size);
-        out_begin += top_size;
+        auto current_end = std::next(current_begin, top_size);
+        std::vector<size_t> top_leaves_idxs = Create(current_begin, current_end, current_out_begin);
+
+        current_begin = current_end;
+        current_out_begin += top_size;
 
         // create bottom trees
-        std::vector<T> bottom_total_leaves_idxs;
-        for (size_t i = 0, t_idx = 0; i < bottom_number; ++i) {
-            end = std::next(begin, bottom_size);
-            std::vector<T> bottom_leaves_idxs = Create(begin, end, out_begin);
+        std::vector<size_t> bottom_total_leaves_idxs;
+        bool place_to_left = true;
+        size_t t_idx = 0;
 
-            bottom_total_leaves_idxs.insert(bottom_total_leaves_idxs.end(), bottom_leaves_idxs.begin(), bottom_leaves_idxs.end());
+        // need to output exactly size
+        while (current_out_begin < out_begin + size) {
+            size_t current_bottom_size = std::min(bottom_size, size + out_begin - current_out_begin);
+            current_end = std::next(current_begin, current_bottom_size);
 
-            if (i % 2 == 0) {
-                layout_[top_leaves_idxs[t_idx]].left_index = out_begin;
+            std::vector<size_t> bottom_leaves_idxs = Create(current_begin, current_end, current_out_begin);
+            current_begin = current_end;
+
+            if (place_to_left) {
+                layout_[top_leaves_idxs[t_idx]].left_index = current_out_begin;
             } else {
-                layout_[top_leaves_idxs[t_idx++]].right_index = out_begin;
+                layout_[top_leaves_idxs[t_idx++]].right_index = current_out_begin;
             }
+            current_out_begin += current_bottom_size;
 
-            begin = std::next(begin, top_size);
-            out_begin += bottom_size;
+            place_to_left = !place_to_left;
+            bottom_total_leaves_idxs.insert(bottom_total_leaves_idxs.end(), bottom_leaves_idxs.begin(), bottom_leaves_idxs.end());
         }
 
         return bottom_total_leaves_idxs;
     }
 
+
+    // Assume keys are in inorder format
     void Create(const std::vector<T>& keys) {
         layout_.resize(keys.size());
 
-        std::vector<T> temp = Create(keys.begin(), keys.end(), 0);
+        Create(keys.begin(), keys.end(), 0);
+    }
+
+    bool Find(T key) {
+        size_t idx = 0;
+
+        while (idx != -1) {
+            if (layout_[idx].key == key) {
+                return true;
+            } else if (layout_[idx].key < key) {
+                idx = layout_[idx].right_child;
+            } else {
+                idx = layout_[idx].left_child;
+            }
+        }
+
+        return false;
     }
 };
 
 
-CliArguments ParseCliArguments(int argc, char **argv) {
-    TCLAP::CmdLine cmd("Searching in external memory with Van-Emde-Boas algorithm", ' ', "1.0");
-    TCLAP::ValueArg<int> memory_size_arg("m", "memory_size", "Maximum memory amount to use", false, DEFAULT_MEMORY_SIZE, "integer");
-    TCLAP::UnlabeledValueArg<std::string> input_file_arg( "input_file", "Input file name", true, "", "nameString");
-    TCLAP::UnlabeledValueArg<std::string> output_file_arg( "output_file", "Output file name", true, "", "nameString");
-    cmd.add(input_file_arg);
-    cmd.add(output_file_arg);
-    cmd.add(memory_size_arg);
+std::vector<int> ReadDataArray() {
+    int n;
+    std::cin >> n;
 
-    cmd.parse(argc, argv);
+    std::vector<int> v(n);
+    for (auto& i : v) {
+        std::cin >> i;
+    }
 
-    CliArguments arguments {
-        input_file_arg.getValue(),
-        output_file_arg.getValue(),
-        memory_size_arg.getValue(),
-    };
-    arguments.CheckOrDie();
-
-    return arguments;
+    return v;
 }
 
 void Test() {
-/*
+    /*
     {
         std::cerr << "TEST CASE #1" << std::endl;
         VEBLayout<int> layout;
@@ -154,16 +199,14 @@ void Test() {
         layout.Create(v);
         layout.DebugPrint();
     }
-*/
-/*
     {
         std::cerr << "TEST CASE #3" << std::endl;
         VEBLayout<int> layout;
-        auto v = {3, 2, 7, 1, 5, 6, 8};
+        auto v = {1, 2, 3, 4, 5, 6, 7};
         layout.Create(v);
         layout.DebugPrint();
     }
-*/
+    */
     {
         std::cerr << "TEST CASE #4" << std::endl;
         VEBLayout<int> layout;
@@ -174,13 +217,100 @@ void Test() {
 }
 
 
-int main(int argc, char **argv) {
+void TestBFS() {
+    {
+        std::cerr << "TEST CASE #1" << std::endl;
+        std::vector<int> v = {1};
+        auto b = BfsFromInorder(v);
+        for (auto i : b) {
+            std::cerr << i << " ";
+        }
+        std::cerr << std::endl;
+    }
+    {
+        std::cerr << "TEST CASE #2" << std::endl;
+        std::vector<int> v = {1, 2};
+        auto b = BfsFromInorder(v);
+        for (auto i : b) {
+            std::cerr << i << " ";
+        }
+        std::cerr << std::endl;
+    }
+    {
+        std::cerr << "TEST CASE #3" << std::endl;
+        std::vector<int> v = {1, 2, 3};
+        auto b = BfsFromInorder(v);
+        for (auto i : b) {
+            std::cerr << i << " ";
+        }
+        std::cerr << std::endl;
+    }
+    {
+        std::cerr << "TEST CASE #4" << std::endl;
+        std::vector<int> v = {1, 2, 3, 4};
+        auto b = BfsFromInorder(v);
+        for (auto i : b) {
+            std::cerr << i << " ";
+        }
+        std::cerr << std::endl;
+    }
+    {
+        std::cerr << "TEST CASE #5" << std::endl;
+        std::vector<int> v = {1, 2, 3, 4, 5};
+        auto b = BfsFromInorder(v);
+        for (auto i : b) {
+            std::cerr << i << " ";
+        }
+        std::cerr << std::endl;
+    }
+    {
+        std::cerr << "TEST CASE #6" << std::endl;
+        std::vector<int> v = {1, 2, 3, 4, 5, 6};
+        auto b = BfsFromInorder(v);
+        for (auto i : b) {
+            std::cerr << i << " ";
+        }
+        std::cerr << std::endl;
+    }
+    {
+        std::cerr << "TEST CASE #7" << std::endl;
+        std::vector<int> v = {1, 2, 3, 4, 5, 6, 7};
+        auto b = BfsFromInorder(v);
+        for (auto i : b) {
+            std::cerr << i << " ";
+        }
+        std::cerr << std::endl;
+    }
+    {
+        std::cerr << "TEST CASE #8" << std::endl;
+        std::vector<int> v = {1, 2, 3, 4, 5, 6, 7, 8};
+        auto b = BfsFromInorder(v);
+        for (auto i : b) {
+            std::cerr << i << " ";
+        }
+        std::cerr << std::endl;
+    }
+}
+
+
+void TestCeilPowerOf2() {
+    for (int i = 0; i < 100; ++i) {
+        std::cerr << i << "\t" << GetCeilPowerOf2(i) << std::endl;
+    }
+}
+
+
+int main() {
     try {
-        // CliArguments arguments = ParseCliArguments(argc, argv);
+        VEBLayout<int> layout;
+        std::vector<int> data = ReadDataArray();
+        layout.Create(BfsFromInorder(data));
+        layout.DebugPrint();
+
         Test();
-    } catch (TCLAP::ArgException &arg) {
-        std::cout << "Invalid arguments: " << arg.error() << "for arg " << arg.argId() << std::endl;
-        return 1;
+        // TestBFS();
+        // TestCeilPowerOf2();
+
     } catch (std::runtime_error& err) {
         std::cout << "Runtime error: " << err.what() << std::endl;
         return 1;
