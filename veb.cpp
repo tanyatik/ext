@@ -61,12 +61,10 @@ public:
         }
     }
 
-
     template<typename TInputIter>
     std::vector<T> Create(TInputIter begin, TInputIter end,
             size_t out_begin) {
         size_t size = std::distance(begin, end);
-        // std::cerr << "Size: " << size << std::endl;
         assert(IsPowerOf2(size + 1));
 
         if (size == 1) {
@@ -78,27 +76,9 @@ public:
         size_t top_height = height >> 1;
         size_t bottom_height = height - top_height;
         size_t top_size = (1 << top_height) - 1;
-        // size_t top_total_leaves_number = (top_size + 1) >> 1;
         size_t bottom_size = (1 << bottom_height) - 1;
-        // size_t bottom_leaves_number = (bottom_size + 1) >> 1;
-        // size_t bottom_total_leaves_number = (size + 1) >> 1;
 
         size_t bottom_number = top_size + 1;
-
-        /*
-        std::cerr << "out_begin " << out_begin
-                << " height " << height
-                << " top height " << top_height
-                << " top_total_leaves_number " << top_total_leaves_number
-                << " bottom height " << bottom_height
-                << " top size " << top_size
-                << " bottom size " << bottom_size
-                << " bottom number " << bottom_number
-                << " bottom leaves number " << bottom_leaves_number
-                << " bottom total leaves number " << bottom_total_leaves_number << std::endl;
-        */
-
-        // size_t out = out_begin;
 
         // create top tree
         auto current_end = std::next(begin, top_size);
@@ -106,10 +86,6 @@ public:
 
         begin = std::next(begin, top_size);
         out_begin += top_size;
-
-        // size_t top_leaves_number = bottom_number >> 1;
-        // size_t top_leaves_begin = out + top_size - top_leaves_number;
-        // size_t bottom_begin = top_leaves_begin + top_leaves_number;
 
         // create bottom trees
         std::vector<T> bottom_total_leaves_idxs;
