@@ -5,11 +5,12 @@
 #include <assert.h>
 #include <cmath>
 #include <queue>
+#include <algorithm>
 
 
 const size_t UNEXISTING_INDEX = 18446744073709551615LU;
 
-
+/*
 static bool IsPowerOf2(size_t x) {
     return (x & (x - 1)) == 0;
 }
@@ -24,6 +25,7 @@ static size_t GetNextPowerOf2(size_t x) {
 
     return x;
 }
+*/
 
 
 struct SearchEvent {
@@ -32,48 +34,18 @@ struct SearchEvent {
 };
 
 
-template<typename T>
-std::vector<T> BfsFromInorder(const std::vector<T>& keys) {
-    assert(IsPowerOf2(keys.size() + 1));
-    std::vector<T> bfs;
-    std::queue<std::pair<size_t, size_t>> bfs_ranges;
-    bfs_ranges.push(std::make_pair(0, keys.size()));
-
-    while (!bfs_ranges.empty()) {
-        std::pair<size_t, size_t> range = bfs_ranges.front();
-        bfs_ranges.pop();
-
-        if (range.first == range.second) {
-            continue;
-        }
-
-        if (range.first + 1 == range.second) {
-            bfs.push_back(keys[range.first]);
-            continue;
-        }
-
-        size_t middle = (range.first + range.second) >> 1;
-
-        bfs.push_back(keys[middle]);
-        bfs_ranges.push(std::make_pair(range.first, middle));
-        bfs_ranges.push(std::make_pair(middle + 1, range.second));
-    }
-
-    return bfs;
-}
-
 
 template<typename T>
 struct TreeNode {
     T key;
-    size_t left_index;
-    size_t right_index;
+    size_t left_child;
+    size_t right_child;
 
-    TreeNode(T key = 0, size_t left_index = 0, size_t right_index = 0) :
-        key(key), left_index(left_index), right_index(right_index) {}
+    TreeNode(T key = 0, size_t left_child = UNEXISTING_INDEX, size_t right_child = UNEXISTING_INDEX) :
+        key(key), left_child(left_child), right_child(right_child) {}
 
     bool operator == (const TreeNode<T>& other) const {
-        return key == other.key && left_index == other.left_index && right_index == other.right_index;
+        return key == other.key && left_child == other.left_child && right_child == other.right_child;
     }
 };
 
@@ -89,74 +61,121 @@ private:
 public:
     VEBLayout(const std::vector<int>& keys) :
         layout_(keys.size()) {
+
+        std::vector<TNode> temp_layout(keys.size());
+        for (size_t idx = 0; idx < keys.size(); ++idx) {
+            temp_layout[idx].key = keys[idx];
+        }
+
         Create(keys.begin(), keys.end(), 0);
     }
 
 
     void DebugPrint() const {
         for (size_t i = 0; i < layout_.size(); ++i) {
-            std::cerr << layout_[i].key << " [" << layout_[i].left_index << ", " <<
-                    layout_[i].right_index << "] " << std::endl;
+            std::cerr << "i = " << i << " : " << layout_[i].key << " [";
+            if (layout_[i].left_child != UNEXISTING_INDEX) {
+                std::cerr << layout_[layout_[i].left_child].key << " ";
+            }
+            std::cerr << " at " << layout_[i].left_child << ", ";
+
+
+            if (layout_[i].right_child != UNEXISTING_INDEX) {
+                std::cerr << layout_[layout_[i].right_child].key << " ";
+            }
+            std::cerr << " at " << layout_[i].right_child << "] " << std::endl;
         }
     }
 
     std::vector<TNode> layout() const { return layout_; }
 
+
     template<typename TInputIter>
-    std::vector<size_t> Create(TInputIter begin, TInputIter end,
-            size_t out) {
+    void Create(TInputIter begin, TInputIter end,
+            size_t out_begin) {
         using std::cerr;
         using std::endl;
 
         size_t size = std::distance(begin, end);
-        assert(IsPowerOf2(size + 1));
+        // std::cerr << "size " << size << std::endl;
+        // assert(IsPowerOf2(size + 1));
 
-        assert(size != 0);
+        if (size == 0) {
+            return;
+        }
         if (size == 1) {
-            layout_[out] = TNode(*begin, UNEXISTING_INDEX, UNEXISTING_INDEX);
-            return { out };
+            layout_[out_begin] = *begin;
+            return;
         }
 
-        size_t height = ceil(log2(size));
-        size_t top_height = height >> 1;
-        size_t bottom_height = height - top_height;
+        size_t height = floor(log2(size)) + 1;
+        // std::cerr << "height " << height << std::endl;
+        size_t bottom_height = height >> 1;
+        size_t top_height = height - bottom_height;
         size_t top_size = (1 << top_height) - 1;
+        // std::cerr << "top size " << top_size << std::endl;
         size_t bottom_size = (1 << bottom_height) - 1;
+        // std::cerr << "bottom size " << bottom_size << std::endl;
+        size_t top_leaves_number = (top_size + 1) >> 1;
+        // std::cerr << "top leaves number " << top_leaves_number << std::endl;
 
-        // create top tree
-        size_t out_end  = out + size;
 
-        end = std::next(begin, top_size);
-        std::vector<size_t> top_leaves = Create(begin, end, out);
+        // leave place for top tree
+        size_t out = out_begin + top_size;
+        size_t out_top_leaves = out_begin + (top_size - top_leaves_number);
+        size_t out_end = out_begin + size;
+        // out += top_size;
 
-        begin = end;
-        out += top_size;
+        std::vector<TNode> top_data;
 
-        // create bottom trees
-        std::vector<size_t> leaves;
-        bool place_to_left = true;
-        size_t t_idx = 0;
-
-        // need to output exactly size
-        while (out < out_end) {
+        bool set_left_child = true;
+        // create subtrees
+        while (out != out_end) {
+            // std::cerr << "out " << out << " end " << out_end << std::endl;
+            // std::cerr << "dist " << std::distance(begin, end) << std::endl;
             size_t current_bottom_size = std::min(bottom_size, out_end - out);
-            end = std::next(begin, current_bottom_size);
+            // std::cerr << "current bottom size " << current_bottom_size << std::endl;
 
-            std::vector<size_t> bottom_leaves = Create(begin, end, out);
-            begin = end;
+            Create(begin, begin + current_bottom_size, out);
+            begin += current_bottom_size;
 
-            if (place_to_left) {
-                layout_[top_leaves[t_idx]].left_index = out;
+            // link bottom subtrees to top subtree
+
+            if (set_left_child) {
+                // if (size == 5) std::cerr << "set left child of " << out_top_leaves << " to " << out << std::endl;
+                top_data.push_back(*begin);
+                top_data.back().left_child = out;
+                begin++;
+                // layout_[out_top_leaves].left_child = out;
             } else {
-                layout_[top_leaves[t_idx++]].right_index = out;
+                // if (size == 5) std::cerr << "set right child of " << out_top_leaves << " to " << out << std::endl;
+                top_data.back().right_child = out;
+                if (begin != end) {
+                    top_data.push_back(*begin);
+                }
+                begin++;
+                // layout_[out_top_leaves++].right_child = out;
             }
-            out += current_bottom_size;
+            set_left_child = !set_left_child;
+            // children[begin_distance] = out;
 
-            place_to_left = !place_to_left;
-            leaves.insert(leaves.end(), bottom_leaves.begin(), bottom_leaves.end());
+//                if (size == 5) {
+//                    std::cerr << "add top data " << begin->key << " ["
+//                            << begin->left_child << ", " << begin->right_child << "]" << std::endl;
+//                }
+            // bottom subtrees keys alternate with keys from top subtree
+            out += current_bottom_size;
         }
 
-        return leaves;
+        top_data.insert(top_data.end(), begin, end);
+        // top subtree (all links are prepared)
+//        if (size == 5) {
+//            std::cerr << "create top subtree " << top_data.size() << std::endl;
+//            for (auto t : top_data) { std::cerr << t.key << " [" << t.left_child << " " << t.right_child << "]"; }
+//            std::cerr << std::endl;
+//        }
+
+        Create(top_data.begin(), top_data.end(), out_begin);
     }
 
 
@@ -167,9 +186,9 @@ public:
             if (layout_[idx].key == key) {
                 return true;
             } else if (layout_[idx].key < key) {
-                idx = layout_[idx].right_index;
+                idx = layout_[idx].right_child;
             } else {
-                idx = layout_[idx].left_index;
+                idx = layout_[idx].left_child;
             }
         }
 
@@ -191,73 +210,43 @@ std::vector<int> ReadDataArray() {
 }
 
 
-void TestCreateVEB() {
-    const size_t E = UNEXISTING_INDEX;
-    typedef TreeNode<int> T;
-    using std::vector;
-    typedef VEBLayout<int> L;
 
-    std::vector<TreeNode<int>> pre = {TreeNode<int>(1, -1, -1)};
-    assert(L({1}).layout() == pre);
+bool TestCreateFindVEB(size_t size, size_t max_element) {
+    std::vector<int> v(size);
+    std::vector<bool> ex(max_element, false);
+    for (int i = 0; i < size; ++i) {
+        v[i] = rand() % max_element;
+        ex[v[i]] = true;
+    }
+    std::sort(v.begin(), v.end());
 
-    pre = { T(2, 1, 2), T(1, E, E), T(3, E, E) };
-    assert(L({2, 1, 3}).layout() == pre);
+    // std::cerr << "TEST " << size << std::endl;
+    auto l = VEBLayout<int>(std::vector<int>(v.begin(), std::unique(v.begin(), v.end())));
 
-    pre = { T(1, 1, 4), T(2, 2, 3), T(3, E, E), T(4, E, E),
-            T(5, 5, 6), T(6, E, E), T(7, E, E)};
-    L({0, 1, 2, 3, 4, 5, 6}).DebugPrint();
-    std::cerr << std::endl;
-    assert(L({1, 2, 3, 4, 5, 6, 7}).layout() == pre);
-
-    L({4, 2, 6, 1, 3, 5, 7}).DebugPrint();
-    std::cerr << std::endl;
-
-
-    pre = { T(8, 1, 2), T(4, 3, 6), T(12, 9, 12),
-            T(2, 4, 5), T(6, E, E), T(10, E, E),
-            T(14, 7, 8), T(1, E, E), T(3, E, E),
-            T(5, 10, 11), T(7, E, E), T(9, E, E),
-            T(11, 13, 14), T(13, E, E), T(15, E, E) };
-    assert(L({8, 4, 12, 2, 6, 10, 14, 1, 3, 5, 7, 9, 11, 13, 15}).layout() == pre);
+    for (int i = 0; i < max_element; ++i) {
+        bool found = l.Find(i);
+        bool exists = ex[i];
+        if (!((found && exists) || (!found && !exists))) {
+            std::cerr << "found " << found << " exists " << exists << std::endl;
+            std::cerr << "Not found: " << i <<
+                " in VEB with keys: ";
+            for (auto k : v) { std::cerr << k << ","; }
+            std::cerr << std::endl;
+            l.DebugPrint();
+            return false;
+        }
+    }
+    return true;
 }
 
 
-void TestBFS() {
-    assert(BfsFromInorder(std::vector<int>({1})) == std::vector<int>({1}));
-    assert(BfsFromInorder(std::vector<int>({1, 2, 3})) == std::vector<int>({2, 1, 3}));
-    assert(BfsFromInorder(std::vector<int>({1, 2, 3, 4, 5, 6, 7})) == std::vector<int>({4, 2, 6, 1, 3, 5, 7}));
-    assert(BfsFromInorder(std::vector<int>({1, 2, 3, 5, 8, 10, 17})) == std::vector<int>({5, 2, 10, 1, 3, 8, 17}));
-}
-
-
-void TestFindVEB() {
-    typedef TreeNode<int> T;
-    using std::vector;
-    typedef VEBLayout<int> L;
-
-    L layout(BfsFromInorder(std::vector<int>({1, 2, 3, 5, 8, 10, 17})));
-    layout.DebugPrint();
-    assert(layout.Find(1));
-    assert(layout.Find(2));
-    assert(layout.Find(3));
-    assert(layout.Find(5));
-    assert(layout.Find(8));
-    assert(layout.Find(10));
-    assert(layout.Find(17));
-
-    assert(!layout.Find(4));
-    assert(!layout.Find(6));
-    assert(!layout.Find(7));
-    assert(!layout.Find(9));
-    assert(!layout.Find(11));
-    assert(!layout.Find(12));
-    assert(!layout.Find(13));
-    assert(!layout.Find(14));
-    assert(!layout.Find(15));
-    assert(!layout.Find(16));
-    assert(!layout.Find(18));
-    assert(!layout.Find(19));
-    assert(!layout.Find(20));
+void TestCreateFindVEB() {
+    for (int size = 1; size < 1000; ++size) {
+        assert(TestCreateFindVEB(size, 1.5 * size));
+        assert(TestCreateFindVEB(size, 2 * size));
+        assert(TestCreateFindVEB(size, 4 * size));
+    }
+    std::cerr << "All tests passed" << std::endl;
 }
 
 
@@ -268,9 +257,9 @@ int main() {
         // layout.DebugPrint();
 
         // TestCeilPowerOf2();
-        TestCreateVEB();
-        TestBFS();
-        TestFindVEB();
+        // TestCreateFindVEB(6, 12);
+        TestCreateFindVEB();
+        // TestFindVEB();
 
     } catch (std::runtime_error& err) {
         std::cout << "Runtime error: " << err.what() << std::endl;
