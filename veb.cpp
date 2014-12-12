@@ -1,11 +1,11 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
-#include <tclap/CmdLine.h>
 #include <assert.h>
 #include <cmath>
 #include <queue>
 #include <algorithm>
+#include <sys/time.h>
 
 
 const size_t UNEXISTING_INDEX = 18446744073709551615LU;
@@ -182,7 +182,8 @@ bool TestCreateFindVEB(size_t size, size_t max_element) {
     std::sort(v.begin(), v.end());
 
     // std::cerr << "TEST " << size << std::endl;
-    auto l = VEBLayout<int>(std::vector<int>(v.begin(), std::unique(v.begin(), v.end())));
+    // auto l = VEBLayout<int>(std::vector<int>(v.begin(), v.end()));
+    auto l = VEBLayout<int>(v);
 
     for (size_t i = 0; i < max_element; ++i) {
         bool found = l.Find(i);
@@ -202,7 +203,7 @@ bool TestCreateFindVEB(size_t size, size_t max_element) {
 
 
 void TestCreateFindVEB() {
-    for (int size = 1; size < 1000000; ++size) {
+    for (int size = 1; size < 1000; ++size) {
         assert(TestCreateFindVEB(size, 1.5 * size));
         assert(TestCreateFindVEB(size, 2 * size));
         assert(TestCreateFindVEB(size, 4 * size));
@@ -212,47 +213,50 @@ void TestCreateFindVEB() {
 
 
 std::vector<int> BenchmarkVEB(const std::vector<int>& data, const std::vector<int>& queries) {
-    long long seconds = time(NULL), elapsed = 0;
+    timeval seconds, elapsed;
+    gettimeofday(&seconds, nullptr);
     auto l = VEBLayout<int>(data);
-    elapsed = time(NULL);
+    gettimeofday(&elapsed, nullptr);
     std::cout << "Van Emde Boas layout for " << data.size() << " keys created in "
-            << elapsed - seconds << " seconds" << std::endl;
+            << 1000 * (elapsed.tv_sec - seconds.tv_sec) + (elapsed.tv_usec - seconds.tv_usec) / 1000
+            << " milliseconds" << std::endl;
 
     // benchmark binary search
     auto bs_answer = std::vector<int>(queries.size());
-    seconds = time(NULL);
+    gettimeofday(&seconds, nullptr);
     for (size_t idx = 0; idx < queries.size(); ++idx) {
         bs_answer[idx] = (std::binary_search(data.begin(), data.end(), queries[idx]) ? 1 : 0);
     }
-    elapsed = time(NULL);
-    std::cout << "Binary search for " << queries.size() << " queries: "
-            << elapsed - seconds << std::endl;
+    gettimeofday(&elapsed, nullptr);
+    std::cout << "Number of queries: " << queries.size() << std::endl;
+    std::cout << "std::binary_search: \t\t"
+            << 1000 * (elapsed.tv_sec - seconds.tv_sec) + (elapsed.tv_usec - seconds.tv_usec) / 1000
+            << " milliseconds" << std::endl;
 
     // benchmark VEB binary search
     auto veb_answer = std::vector<int>(queries.size());
-    seconds = time(NULL);
+    gettimeofday(&seconds, nullptr);
     for (size_t idx = 0; idx < queries.size(); ++idx) {
         veb_answer[idx] = (l.Find(queries[idx]) ? 1 : 0);
     }
-    elapsed = time(NULL);
-    std::cout << "Van Emde Boas search for " << queries.size() << " queries: "
-            << elapsed - seconds << std::endl;
-
-    assert(bs_answer == veb_answer);
+    gettimeofday(&elapsed, nullptr);
+    std::cout << "Van Emde Boas search: \t\t"
+            << 1000 * (elapsed.tv_sec - seconds.tv_sec) + (elapsed.tv_usec - seconds.tv_usec) / 1000
+            << " milliseconds" << std::endl;
 
     return veb_answer;
 }
 
-int main() {
+int main(int argc, char **) {
     try {
-        // std::vector<int> data = ReadDataArray();
-        // TestCreateFindVEB();
         std::vector<int> keys = ReadDataArray();
         std::vector<int> queries = ReadDataArray();
 
         std::vector<int> answers = BenchmarkVEB(keys, queries);
 
-        WriteDataArray(answers);
+        if (argc == 1) {
+            WriteDataArray(answers);
+        }
 
         return 0;
     } catch (std::runtime_error& err) {
