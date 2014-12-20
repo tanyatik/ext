@@ -8,6 +8,7 @@
 
 using std::vector;
 using std::cin;
+using std::cerr;
 using std::cout;
 using std::endl;
 using std::sort;
@@ -16,6 +17,7 @@ using std::max;
 
 
 const size_t MAX_MEMORY = 2 * 1024 * 1024 * 1024;
+const size_t MAX_MEMORY_COUNT = MAX_MEMORY / sizeof(int);
 const size_t MAX_CHUNK = 75 * 1024 * 1024;
 const size_t MAX_HEIGHT = 30;
 
@@ -67,15 +69,17 @@ vector<int> MergeSubtrees(const vector<int>& left, const vector<int>& right, int
 }
 
 
-vector<int> ReadTreeChunk(Filter filter, int chunk_size, bool* stop) {
+vector<int> ReadTreeChunk(Filter filter, size_t chunk_size, bool* stop, int *count_right) {
     vector<int> chunk;
-    while (!*stop && chunk.size() < chunk_size) {  //    int idx = 0; idx < chunk_size; ++idx) {
+    while (!(*stop) && chunk.size() < chunk_size) {
         int value;
         cin >> value;
         if (value == 0) {
             *stop = true;
         } else if (filter(value)) {
             chunk.push_back(value);
+        } else if (value > filter.right_range) {
+            ++*count_right;
         }
     }
     sort(chunk.begin(), chunk.end());
@@ -83,14 +87,14 @@ vector<int> ReadTreeChunk(Filter filter, int chunk_size, bool* stop) {
 }
 
 
-vector<int> BuildTree(Filter filter, size_t chunk_size, bool* stop, size_t* height = nullptr) {
+vector<int> BuildTree(Filter filter, size_t chunk_size, bool* stop, size_t* height, int *count_right) {
     size_t left_height = 1;
-    vector<int> left_subtree = ReadTreeChunk(filter, chunk_size, stop);
+    vector<int> left_subtree = ReadTreeChunk(filter, chunk_size, stop, count_right);
 
-    while (!*stop && (!height || (height && left_height < *height))) {
+    while (!*stop && left_height < *height) {
         // get right subtree of the same height
         size_t right_height = left_height;
-        vector<int> right_subtree = BuildTree(filter, chunk_size, stop, &right_height);
+        vector<int> right_subtree = BuildTree(filter, chunk_size, stop, &right_height, count_right);
         if (right_height < left_height) {
             *stop = true;
         }
@@ -98,7 +102,6 @@ vector<int> BuildTree(Filter filter, size_t chunk_size, bool* stop, size_t* heig
         if (right_subtree.size() > 0) {
             left_subtree = MergeSubtrees(left_subtree, right_subtree, 2);
             left_height += 1;
-            cout << "left height " << left_height << endl;
         }
     }
 
@@ -109,55 +112,73 @@ vector<int> BuildTree(Filter filter, size_t chunk_size, bool* stop, size_t* heig
 }
 
 
-int MaximumGreater(size_t level, int pow2, size_t j) {
-    cout << "M" << j << " = " << (level + j - 1) * pow2 << endl;
-    return (level + j - 1) * pow2;
-}
-
-int MinimumGreater(size_t level, int pow2, size_t j) {
-    cout << "L" << j << " = " << (j * pow2 - 1) << endl;
-    return (j * pow2 - 1);
-}
-
-
-Filter GetNewFilter(size_t height, int k_order, const vector<int>& tree_root) {
+Filter GetNewFilter(Filter filter, size_t height, int k_order, const vector<int>& tree_root) {
     size_t level = height - 1;
     int pow2 = int(pow(2, level));
-
-    int alpha = 0;
-    int beta = tree_root.size() - 1;
+    cerr << "pow2 " << pow2 << endl;
 
     int j1 = int(ceil(1.0 * k_order / pow2)) - int(level);
     if (1 <= j1 && j1 <= tree_root.size()) {
-        beta = tree_root.size() - j1;
+        cerr << "j1 " << j1 << endl;
+        int beta = tree_root.size() - j1;
+        filter.right_range = tree_root.at(beta);
     }
 
-    int j2 = int(ceil(1.0 * k_order / pow2));
+    int j2 = int(ceil(1.0 * k_order / pow2)) + 2;
     if (1 <= j2 && j2 <= tree_root.size()) {
-        alpha = tree_root.size() - j2;
+        cerr << "j2 " << j2 << endl;
+        int alpha = tree_root.size() - j2;
+        filter.left_range = tree_root.at(alpha);
     }
-    return Filter(tree_root.at(alpha), tree_root.at(beta));
+
+
+    assert(filter.left_range == INT_MIN || filter.right_range == INT_MAX ||
+            filter.right_range - filter.left_range < pow2 * (pow2 - 1));
+    return filter;
 }
 
 
-Filter FirstPass(int k_order) {
+Filter FirstPass(Filter filter, int k_order) {
     size_t chunk_size = GetChunkSize();
 
     bool stop = false;
     size_t height = INT_MAX;
-    vector<int> tree_root = BuildTree(Filter(INT_MIN, INT_MAX), chunk_size, &stop, &height);
+    int count_before = 0;
+    vector<int> tree_root = BuildTree(filter, chunk_size, &stop, &height, &count_before);
 
-    return GetNewFilter(height, k_order, tree_root);
+    return GetNewFilter(filter, height, k_order, tree_root);
+}
+
+
+int SecondPass(Filter filter, int k_order) {
+    int count_before = 0;
+
+    // assert(filter.right_range - filter.left_range <= MAX_MEMORY_COUNT);
+
+    bool stop = false;
+    int count_right = 0;
+    cerr << "2nd pass " << endl;
+    vector<int> data = ReadTreeChunk(filter, MAX_MEMORY_COUNT, &stop, &count_right);
+    cerr << "data size " << data.size() << endl;
+    cerr << "count right " << count_right << endl;
+
+    assert(data.size() <= MAX_MEMORY_COUNT);
+    assert(k_order >= count_right);
+    k_order -= count_right;
+    assert(k_order <= data.size());
+    cerr << "k order " << k_order << endl;
+
+    cerr << "index in sorted " << std::distance(data.begin(), data.end() - k_order) << endl;
+    std::nth_element(data.begin(), data.end() - k_order, data.end());
+    return data[data.size() - k_order];
 }
 
 
 int KOrderStatistics(int k_order) {
-    Filter first_pass_result = FirstPass(k_order);
+    Filter filter = FirstPass(Filter(INT_MIN, INT_MAX), k_order);
 
-    cout << "[" << first_pass_result.left_range << ", " << first_pass_result.right_range << "]" << endl;
-    // TODO
-    return 0;
-    // return SecondPass(first_pass_result);
+    cerr << "[" << filter.left_range << ", " << filter.right_range << "]" << endl;
+    return SecondPass(filter, k_order);
 }
 
 
@@ -168,24 +189,14 @@ void PrintStatistics(int k_order, int st) {
 
 // TESTS
 void TestMergeSubtrees() {
-    cout << "TEST" << endl;
+    cerr << "TEST" << endl;
     vector<int> a = {11, 31, 41, 51, 71, 81};
     vector<int> b = {2, 3, 4, 5, 8, 15, 24};
     vector<int> res = MergeSubtrees(a, b, 2);
     for (int r : res) {
-        cout << r << " ";
+        cerr << r << " ";
     }
-    cout << endl;
-}
-
-
-void TestBuildTree() {
-    bool stop = false;
-    vector<int> tree = BuildTree(Filter(INT_MIN, INT_MAX), 4, &stop);
-    for (int r : tree) {
-        cout << r << " ";
-    }
-    cout << endl;
+    cerr << endl;
 }
 
 
