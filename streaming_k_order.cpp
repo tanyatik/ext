@@ -50,15 +50,15 @@ vector<int> MergeSubtrees(const vector<int>& left, const vector<int>& right, int
         if (begin_first < left.end() &&
                 (begin_second >= right.end() || !(*begin_second < *begin_first))) {
             if ((num) % thinning_coeff == 0) {
-                result.push_back(*begin_first);  // Increment begin_first after using it as an index.
+                result.push_back(*begin_first);  // Increment begin_first before using it as an index.
             }
             ++begin_first;
         }
         else {
             if ((num) % thinning_coeff == 0) {
-                result.push_back(*begin_second);  // Increment begin_first after using it as an index.
+                result.push_back(*begin_second);  // Increment begin_first before using it as an index.
             }
-            begin_second++;  // Increment begin_second after using it as an index.
+            begin_second++;  // Increment begin_second before using it as an index.
         }
         ++num;
     }
@@ -67,7 +67,7 @@ vector<int> MergeSubtrees(const vector<int>& left, const vector<int>& right, int
 }
 
 
-vector<int> ReadTreeChunk(Filter filter, size_t chunk_size, bool* stop, int *count_right) {
+vector<int> ReadTreeChunk(Filter filter, size_t chunk_size, bool* stop, int *count_before) {
     vector<int> chunk;
     while (!(*stop) && chunk.size() < chunk_size) {
         int value;
@@ -76,8 +76,8 @@ vector<int> ReadTreeChunk(Filter filter, size_t chunk_size, bool* stop, int *cou
             *stop = true;
         } else if (filter(value)) {
             chunk.push_back(value);
-        } else if (value > filter.right_range) {
-            ++*count_right;
+        } else if (value < filter.left_range) {
+            ++*count_before;
         }
     }
     sort(chunk.begin(), chunk.end());
@@ -85,14 +85,14 @@ vector<int> ReadTreeChunk(Filter filter, size_t chunk_size, bool* stop, int *cou
 }
 
 
-vector<int> BuildTree(Filter filter, size_t chunk_size, bool* stop, size_t* height, int *count_right) {
+vector<int> BuildTree(Filter filter, size_t chunk_size, bool* stop, size_t* height, int *count_before) {
     size_t left_height = 1;
-    vector<int> left_subtree = ReadTreeChunk(filter, chunk_size, stop, count_right);
+    vector<int> left_subtree = ReadTreeChunk(filter, chunk_size, stop, count_before);
 
     while (!*stop && left_height < *height) {
         // get right subtree of the same height
         size_t right_height = left_height;
-        vector<int> right_subtree = BuildTree(filter, chunk_size, stop, &right_height, count_right);
+        vector<int> right_subtree = BuildTree(filter, chunk_size, stop, &right_height, count_before);
         if (right_height < left_height) {
             *stop = true;
         }
@@ -114,21 +114,20 @@ Filter GetNewFilter(Filter filter, size_t height, int k_order, const vector<int>
     size_t level = height - 1;
     int pow2 = int(pow(2, level));
 
-    int j1 = int(ceil(1.0 * k_order / pow2)) - int(level);
-    if (1 <= j1 && j1 <= int(tree_root.size())) {
-        int beta = tree_root.size() - j1;
-        filter.right_range = tree_root.at(beta);
+    int j1 = int(ceil(1.0 * k_order / pow2)) - int(level) - 1;
+    if (0 <= j1 && j1 < int(tree_root.size())) {
+        filter.left_range = tree_root.at(j1);
     }
 
     int j2 = int(ceil(1.0 * k_order / pow2));
-    if (1 <= j2 && j2 <= int(tree_root.size())) {
-        int alpha = tree_root.size() - j2;
-        filter.left_range = tree_root.at(alpha);
+    if (0 <= j2 && j2 < int(tree_root.size())) {
+        filter.right_range = tree_root.at(j2);
     }
 
-
+    int len = max(1, pow2 * (pow2 - 1));
+    assert(filter.left_range <= filter.right_range);
     assert(filter.left_range == INT_MIN || filter.right_range == INT_MAX ||
-            filter.right_range - filter.left_range <= pow2 * (pow2 - 1));
+            filter.right_range - filter.left_range <= len);
     return filter;
 }
 
@@ -147,16 +146,16 @@ Filter FirstPass(Filter filter, int k_order) {
 
 int SecondPass(Filter filter, int k_order) {
     bool stop = false;
-    int count_right = 0;
-    vector<int> data = ReadTreeChunk(filter, MAX_MEMORY_COUNT, &stop, &count_right);
+    int count_before = 0;
+    vector<int> data = ReadTreeChunk(filter, MAX_MEMORY_COUNT, &stop, &count_before);
 
-    assert(data.size() <= MAX_MEMORY_COUNT);
-    assert(k_order >= count_right);
-    k_order -= count_right;
-    assert(k_order <= int(data.size()));
+    assert(0 < data.size() && data.size() <= MAX_MEMORY_COUNT);
+    assert(k_order >= count_before);
+    k_order = k_order - count_before - 1;
+    assert(0 <= k_order && k_order < int(data.size()));
 
-    std::nth_element(data.begin(), data.end() - k_order, data.end());
-    return data[data.size() - k_order];
+    std::nth_element(data.begin(), data.begin() + k_order, data.end());
+    return data[k_order];
 }
 
 
@@ -167,14 +166,14 @@ int KOrderStatistics(int k_order) {
 }
 
 
-void PrintStatistics(int k_order, int st) {
-    cout << k_order << "-statictics of input stream is " << st << endl;
+void PrintStatistics(int /*k_order*/, int st) {
+    cout << st << endl;
 }
 
 
 void PrintUsage() {
     cout << "Implementation of Munro-Paterson algorithm "
-        << " of finding a k-order maximum in streaming data. " << endl
+        << " of finding a k-order minimum in streaming data. " << endl
         << "Usage: " << endl
         << "./munpat k" << endl
         << "k should be in range [0..N-1], where N stands for input size." << endl;
