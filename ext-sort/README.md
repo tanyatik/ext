@@ -5,7 +5,7 @@ Tested on files around 10 GB, probably will do on files around 100 GB.
 
 ## Build
 
-To build, you need SCons.
+To build, you need SCons (http://www.scons.org/).
 Run
 
 `scons`
@@ -24,4 +24,4 @@ To sort a binary file `in` into file `out`, simply run
 
 ## Algorithm
 
-Uses K-Merge sort.
+Uses K-Merge sort (https://en.wikipedia.org/wiki/External_sorting#External_merge_sort).
