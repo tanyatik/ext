@@ -1,4 +1,4 @@
-#define OLD_GCC
+// #define OLD_GCC
 
 #include <fstream>
 #include <stdexcept>
