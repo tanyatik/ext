@@ -1,5 +1,5 @@
 ## Description
-Interesting algorithms to solve unusual tasks (external memory/streaming/cache oblivious)
+External memory/streaming/cache oblivious algorithms
 
 ## List of projects
 
